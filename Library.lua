@@ -311,6 +311,9 @@ function TierUp.new(config)
 	pagesFolder.Name = "Pages"
 	pagesFolder.Parent = main
 
+	local TAB_TWEEN = TweenInfo.new(0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local TAB_SLIDE = 16
+
 	local BODY_TOP = 37 + 6
 	local SIDE_PAD = 13
 	local GAP = 8
@@ -368,16 +371,77 @@ function TierUp.new(config)
 	local tabButtons = {}
 	local pages = {}
 	local activeTab = 1
+	local tabAnimToken = 0
 
-	local function setActiveTab(index)
-		activeTab = index
+	local function resetPage(page)
+		page.Visible = false
+		page.GroupTransparency = 0
+		page.Position = UDim2.fromOffset(0, 0)
+	end
+
+	local function setActiveTab(index, instant)
+		if index < 1 or index > #pages then
+			return
+		end
+
 		for i, btn in ipairs(tabButtons) do
-			local active = (i == index)
-			btn.TextColor3 = active and COLORS.Accent or COLORS.Text
+			btn.TextColor3 = (i == index) and COLORS.Accent or COLORS.Text
 		end
+
+		if index == activeTab then
+			return
+		end
+
+		local prev = activeTab
+		activeTab = index
+
+		local outPage = pages[prev]
+		local inPage = pages[index]
+
+		if instant then
+			tabAnimToken += 1
+			for i, page in ipairs(pages) do
+				if i == index then
+					page.Visible = true
+					page.GroupTransparency = 0
+					page.Position = UDim2.fromOffset(0, 0)
+				else
+					resetPage(page)
+				end
+			end
+			return
+		end
+
+		tabAnimToken += 1
+		local token = tabAnimToken
+		local dir = index > prev and 1 or -1
+
 		for i, page in ipairs(pages) do
-			page.Visible = (i == index)
+			if i ~= prev and i ~= index then
+				resetPage(page)
+			end
 		end
+
+		inPage.Visible = true
+		inPage.GroupTransparency = 1
+		inPage.Position = UDim2.fromOffset(dir * TAB_SLIDE, 0)
+
+		TweenService:Create(outPage, TAB_TWEEN, {
+			GroupTransparency = 1,
+			Position = UDim2.fromOffset(-dir * TAB_SLIDE, 0),
+		}):Play()
+
+		TweenService:Create(inPage, TAB_TWEEN, {
+			GroupTransparency = 0,
+			Position = UDim2.fromOffset(0, 0),
+		}):Play()
+
+		task.delay(TAB_TWEEN.Time, function()
+			if token ~= tabAnimToken then
+				return
+			end
+			resetPage(outPage)
+		end)
 	end
 
 	local tabNames = config.Tabs or { "tab 1" }
@@ -402,11 +466,12 @@ function TierUp.new(config)
 		end)
 		tabButtons[i] = tab
 
-		local page = Instance.new("Frame")
+		local page = Instance.new("CanvasGroup")
 		page.Name = "Page" .. i
 		page.BackgroundTransparency = 1
 		page.Size = UDim2.fromScale(1, 1)
 		page.Visible = (i == 1)
+		page.GroupTransparency = 0
 		page.ZIndex = 12
 		page.Parent = pagesFolder
 		pages[i] = page
@@ -496,7 +561,7 @@ function TierUp.new(config)
 			end)
 		end)
 	end
-	setActiveTab(1)
+	setActiveTab(1, true)
 
 	local colorModalClose = nil
 	local colorModal = Instance.new("TextButton")
@@ -1055,7 +1120,7 @@ function TierUp.new(config)
 			end
 		end
 
-		setActiveTab(activeTab)
+		setActiveTab(activeTab, true)
 		if applyKeybindVisual then
 			applyKeybindVisual()
 		end
