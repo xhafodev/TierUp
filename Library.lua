@@ -266,7 +266,7 @@ function TierUp.new(config)
 
 	local header = Instance.new("Frame")
 	header.Name = "Header"
-	header.Size = UDim2.fromOffset(700, 37)
+	header.Size = UDim2.new(1, 0, 0, 37)
 	header.BackgroundColor3 = COLORS.HeaderBg
 	header.BorderSizePixel = 0
 	header.ZIndex = 11
@@ -307,23 +307,37 @@ function TierUp.new(config)
 	tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	tabLayout.Parent = tabRow
 
-	local HEADER_H = 37
-	local pageHost = Instance.new("Frame")
-	pageHost.Name = "PageHost"
-	pageHost.BackgroundTransparency = 1
-	pageHost.Size = UDim2.new(1, 0, 1, -HEADER_H)
-	pageHost.Position = UDim2.fromOffset(0, HEADER_H)
-	pageHost.ClipsDescendants = true
-	pageHost.ZIndex = 11
-	pageHost.Parent = main
+	local pagesFolder = Instance.new("Folder")
+	pagesFolder.Name = "Pages"
+	pagesFolder.Parent = main
 
-	local TAB_TWEEN = TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-	local TAB_SLIDE = 56
-
-	local BODY_TOP = 6
+	local BODY_TOP = 37 + 6
 	local SIDE_PAD = 13
 	local GAP = 8
+	local BOTTOM_PAD = 7
 	local GB_W, GB_H = 333, 450
+	local MIN_MAIN_W, MIN_MAIN_H = 440, 250
+
+	local function updateMainLayout()
+		local mainW = main.AbsoluteSize.X
+		local mainH = main.AbsoluteSize.Y
+
+		GB_W = math.max(160, math.floor((mainW - (SIDE_PAD * 2) - GAP) / 2))
+		GB_H = math.max(120, mainH - BODY_TOP - BOTTOM_PAD)
+
+		for _, page in ipairs(pages) do
+			local gb1 = page:FindFirstChild("Groupbox1")
+			local gb2 = page:FindFirstChild("Groupbox2")
+			if gb1 then
+				gb1.Size = UDim2.fromOffset(GB_W, GB_H)
+				gb1.Position = UDim2.fromOffset(SIDE_PAD, BODY_TOP)
+			end
+			if gb2 then
+				gb2.Size = UDim2.fromOffset(GB_W, GB_H)
+				gb2.Position = UDim2.fromOffset(SIDE_PAD + GB_W + GAP, BODY_TOP)
+			end
+		end
+	end
 
 	local function makeGroupbox(parent, name, title, x)
 		local gb = Instance.new("Frame")
@@ -377,82 +391,16 @@ function TierUp.new(config)
 	local tabButtons = {}
 	local pages = {}
 	local activeTab = 1
-	local tabAnimToken = 0
 
-	local function resetPage(page)
-		page.Visible = false
-		page.Position = UDim2.fromOffset(0, 0)
-		page.ZIndex = 1
-	end
-
-	local function setActiveTab(index, instant)
-		if index < 1 or index > #pages then
-			return
-		end
-
-		for i, btn in ipairs(tabButtons) do
-			btn.TextColor3 = (i == index) and COLORS.Accent or COLORS.Text
-		end
-
-		if index == activeTab then
-			return
-		end
-
-		local prev = activeTab
+	local function setActiveTab(index)
 		activeTab = index
-
-		local outPage = pages[prev]
-		local inPage = pages[index]
-
-		if instant then
-			tabAnimToken += 1
-			for i, page in ipairs(pages) do
-				if i == index then
-					page.Visible = true
-					page.Position = UDim2.fromOffset(0, 0)
-					page.ZIndex = 2
-				else
-					resetPage(page)
-				end
-			end
-			return
+		for i, btn in ipairs(tabButtons) do
+			local active = (i == index)
+			btn.TextColor3 = active and COLORS.Accent or COLORS.Text
 		end
-
-		tabAnimToken += 1
-		local token = tabAnimToken
-		local dir = index > prev and 1 or -1
-
 		for i, page in ipairs(pages) do
-			if i ~= prev and i ~= index then
-				resetPage(page)
-			end
+			page.Visible = (i == index)
 		end
-
-		outPage.ZIndex = 2
-		inPage.ZIndex = 3
-		inPage.Visible = true
-		inPage.Position = UDim2.fromOffset(dir * TAB_SLIDE, 0)
-
-		local outTween = TweenService:Create(outPage, TAB_TWEEN, {
-			Position = UDim2.fromOffset(-dir * TAB_SLIDE, 0),
-		})
-		local inTween = TweenService:Create(inPage, TAB_TWEEN, {
-			Position = UDim2.fromOffset(0, 0),
-		})
-
-		outTween:Play()
-		inTween:Play()
-
-		inTween.Completed:Connect(function(playbackState)
-			if playbackState ~= Enum.PlaybackState.Completed then
-				return
-			end
-			if token ~= tabAnimToken then
-				return
-			end
-			resetPage(outPage)
-			inPage.ZIndex = 2
-		end)
 	end
 
 	local tabNames = config.Tabs or { "tab 1" }
@@ -482,8 +430,8 @@ function TierUp.new(config)
 		page.BackgroundTransparency = 1
 		page.Size = UDim2.fromScale(1, 1)
 		page.Visible = (i == 1)
-		page.ZIndex = (i == 1) and 2 or 1
-		page.Parent = pageHost
+		page.ZIndex = 12
+		page.Parent = pagesFolder
 		pages[i] = page
 	end
 
@@ -571,7 +519,7 @@ function TierUp.new(config)
 			end)
 		end)
 	end
-	setActiveTab(1, true)
+	setActiveTab(1)
 
 	local colorModalClose = nil
 	local colorModal = Instance.new("TextButton")
@@ -1130,7 +1078,7 @@ function TierUp.new(config)
 			end
 		end
 
-		setActiveTab(activeTab, true)
+		setActiveTab(activeTab)
 		if applyKeybindVisual then
 			applyKeybindVisual()
 		end
@@ -1771,6 +1719,7 @@ function TierUp.new(config)
 		LoadConfig = loadConfig,
 		OverwriteConfig = overwriteConfig,
 		ListConfigNames = listConfigNames,
+		UpdateLayout = updateMainLayout,
 	}
 
 	if config.Title then
@@ -2098,6 +2047,103 @@ function TierUp.new(config)
 			dragging = false
 		end
 	end)
+
+	local RESIZE_GREY = Color3.fromRGB(130, 130, 130)
+	local RESIZE_WHITE = Color3.fromRGB(255, 255, 255)
+	local resizing = false
+	local resizeHovered = false
+	local resizeStart = nil
+	local resizeStartSize = nil
+
+	local resizeGrip = Instance.new("TextButton")
+	resizeGrip.Name = "ResizeGrip"
+	resizeGrip.AutoButtonColor = false
+	resizeGrip.Text = ""
+	resizeGrip.Size = UDim2.fromOffset(14, 14)
+	resizeGrip.Position = UDim2.new(1, -3, 1, -3)
+	resizeGrip.AnchorPoint = Vector2.new(1, 1)
+	resizeGrip.BackgroundColor3 = RESIZE_GREY
+	resizeGrip.BorderSizePixel = 0
+	resizeGrip.ZIndex = 50
+	resizeGrip.Parent = main
+	corner(resizeGrip, 3)
+
+	for i = 0, 2 do
+		local line = Instance.new("Frame")
+		line.Name = "Line" .. i
+		line.BorderSizePixel = 0
+		line.BackgroundColor3 = Color3.fromRGB(90, 90, 90)
+		line.Size = UDim2.fromOffset(2, 7)
+		line.Position = UDim2.fromOffset(3 + (i * 3), 4 + (i * 3))
+		line.Rotation = 45
+		line.ZIndex = 51
+		line.Parent = resizeGrip
+	end
+
+	local function setResizeGripHover(active)
+		resizeGrip.BackgroundColor3 = active and RESIZE_WHITE or RESIZE_GREY
+		for _, child in ipairs(resizeGrip:GetChildren()) do
+			if child:IsA("Frame") and child.Name:match("^Line") then
+				child.BackgroundColor3 = active and Color3.fromRGB(170, 170, 170) or Color3.fromRGB(90, 90, 90)
+			end
+		end
+	end
+
+	resizeGrip.MouseEnter:Connect(function()
+		resizeHovered = true
+		if not resizing then
+			setResizeGripHover(true)
+		end
+	end)
+	resizeGrip.MouseLeave:Connect(function()
+		resizeHovered = false
+		if not resizing then
+			setResizeGripHover(false)
+		end
+	end)
+
+	resizeGrip.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1
+			and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+
+		resizing = true
+		resizeStart = input.Position
+		resizeStartSize = main.Size
+		setResizeGripHover(true)
+
+		if main.AnchorPoint ~= Vector2.new(0, 0) then
+			local abs = main.AbsolutePosition
+			main.AnchorPoint = Vector2.new(0, 0)
+			main.Position = UDim2.fromOffset(abs.X, abs.Y)
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if not resizing then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement
+			and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+
+		local delta = input.Position - resizeStart
+		local newW = math.max(MIN_MAIN_W, resizeStartSize.X.Offset + delta.X)
+		local newH = math.max(MIN_MAIN_H, resizeStartSize.Y.Offset + delta.Y)
+		main.Size = UDim2.fromOffset(newW, newH)
+		updateMainLayout()
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
+			if resizing then
+				resizing = false
+				setResizeGripHover(resizeHovered)
+			end
+		end
+	end)
+
 	applyTheme(config.Theme or "TierUp")
 	return L
 end
