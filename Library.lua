@@ -61,6 +61,7 @@ function TierUp.new(config)
 			minus = "rbxassetid://118026365011536",
 			check = "rbxassetid://93898873302694",
 			keyboard = "rbxassetid://121474456068237",
+			search = "rbxassetid://121018724060431",
 		}
 	end
 
@@ -266,7 +267,7 @@ function TierUp.new(config)
 
 	local header = Instance.new("Frame")
 	header.Name = "Header"
-	header.Size = UDim2.new(1, 0, 0, 37)
+	header.Size = UDim2.fromOffset(700, 37)
 	header.BackgroundColor3 = COLORS.HeaderBg
 	header.BorderSizePixel = 0
 	header.ZIndex = 11
@@ -285,7 +286,7 @@ function TierUp.new(config)
 		Name = "Title",
 		Text = "TierUp",
 		TextSize = 18,
-		Size = UDim2.new(0, 160, 1, 0),
+		Size = UDim2.new(0, 95, 1, 0),
 		Position = UDim2.new(0, 16, 0, 0),
 		ZIndex = 12,
 	})
@@ -314,30 +315,7 @@ function TierUp.new(config)
 	local BODY_TOP = 37 + 6
 	local SIDE_PAD = 13
 	local GAP = 8
-	local BOTTOM_PAD = 7
 	local GB_W, GB_H = 333, 450
-	local MIN_MAIN_W, MIN_MAIN_H = 440, 250
-
-	local function updateMainLayout()
-		local mainW = main.AbsoluteSize.X
-		local mainH = main.AbsoluteSize.Y
-
-		GB_W = math.max(160, math.floor((mainW - (SIDE_PAD * 2) - GAP) / 2))
-		GB_H = math.max(120, mainH - BODY_TOP - BOTTOM_PAD)
-
-		for _, page in ipairs(pages) do
-			local gb1 = page:FindFirstChild("Groupbox1")
-			local gb2 = page:FindFirstChild("Groupbox2")
-			if gb1 then
-				gb1.Size = UDim2.fromOffset(GB_W, GB_H)
-				gb1.Position = UDim2.fromOffset(SIDE_PAD, BODY_TOP)
-			end
-			if gb2 then
-				gb2.Size = UDim2.fromOffset(GB_W, GB_H)
-				gb2.Position = UDim2.fromOffset(SIDE_PAD + GB_W + GAP, BODY_TOP)
-			end
-		end
-	end
 
 	local function makeGroupbox(parent, name, title, x)
 		local gb = Instance.new("Frame")
@@ -433,6 +411,361 @@ function TierUp.new(config)
 		page.ZIndex = 12
 		page.Parent = pagesFolder
 		pages[i] = page
+	end
+
+	local searchIndex = {}
+	local searchOpen = false
+	local searchWrap, searchInput, searchResults, searchResultsInner
+
+	local SKIP_FEATURE_LABELS = {
+		Value = true,
+		Check = true,
+		Swatch = true,
+		StateIcon = true,
+		KeyLabel = true,
+		PickerLabel = true,
+		Message = true,
+		Brand = true,
+		Time = true,
+		FPS = true,
+	}
+
+	local function makeBreadcrumb(tabName, groupTitle, featureName)
+		return tabName .. " < " .. groupTitle .. " < " .. featureName
+	end
+
+	local function resolveGroupboxContext(inst)
+		local gb = inst
+		while gb and gb.Parent do
+			if gb:IsA("Frame") and gb:FindFirstChild("GroupHeader") and gb:FindFirstChild("Content") then
+				break
+			end
+			gb = gb.Parent
+		end
+		if not gb then
+			return nil
+		end
+		local page = gb.Parent
+		if not page then
+			return nil
+		end
+		local tabIndex = tonumber(page.Name:match("^Page(%d+)$"))
+		if not tabIndex then
+			return nil
+		end
+		local titleLabel = gb.GroupHeader:FindFirstChild("GroupTitle")
+		local groupTitle = (titleLabel and titleLabel.Text) or gb.Name
+		local tabName = tabNames[tabIndex] or ("tab " .. tabIndex)
+		return tabIndex, tabName, groupTitle
+	end
+
+	local function getRowFeatureName(row)
+		if row:IsA("TextButton") and row.Text ~= "" then
+			return row.Text
+		end
+		for _, child in ipairs(row:GetChildren()) do
+			if child:IsA("TextLabel") and not SKIP_FEATURE_LABELS[child.Name] then
+				local text = child.Text
+				if text ~= "" and child.TextXAlignment ~= Enum.TextXAlignment.Center then
+					return text
+				end
+			end
+		end
+		if row.Name == "SliderBlock" then
+			for _, child in ipairs(row:GetChildren()) do
+				if child:IsA("TextLabel") and child.Name ~= "Value" and child.Text ~= "" then
+					return child.Text
+				end
+			end
+		end
+		return nil
+	end
+
+	local function addSearchEntry(name, target, tabIndex, tabName, groupTitle)
+		if not name or name == "" or not target then
+			return
+		end
+		local breadcrumb = makeBreadcrumb(tabName, groupTitle, name)
+		table.insert(searchIndex, {
+			name = name,
+			target = target,
+			tabIndex = tabIndex,
+			tabName = tabName,
+			groupTitle = groupTitle,
+			breadcrumb = breadcrumb,
+			searchText = string.lower(tabName .. " " .. groupTitle .. " " .. name),
+		})
+	end
+
+	local function registerSearchEntry(name, target, tabIndex, tabName, groupTitle)
+		if tabIndex and tabName and groupTitle then
+			addSearchEntry(name, target, tabIndex, tabName, groupTitle)
+			return
+		end
+		local idx, tName, gTitle = resolveGroupboxContext(target)
+		if idx then
+			addSearchEntry(name, target, idx, tName, gTitle)
+		end
+	end
+
+	local function refreshSearchIndex()
+		table.clear(searchIndex)
+		for tabIndex, page in ipairs(pages) do
+			local tabName = tabNames[tabIndex] or ("tab " .. tabIndex)
+			for _, gb in ipairs(page:GetChildren()) do
+				if gb:IsA("Frame") and gb:FindFirstChild("Content") and gb:FindFirstChild("GroupHeader") then
+					local titleLabel = gb.GroupHeader:FindFirstChild("GroupTitle")
+					local groupTitle = (titleLabel and titleLabel.Text) or gb.Name
+					local content = gb.Content
+					for _, child in ipairs(content:GetChildren()) do
+						if child:IsA("Frame") then
+							local featureName = getRowFeatureName(child)
+							if featureName then
+								addSearchEntry(featureName, child, tabIndex, tabName, groupTitle)
+							end
+						elseif child:IsA("TextButton") and child.Text ~= "" then
+							addSearchEntry(child.Text, child, tabIndex, tabName, groupTitle)
+						end
+					end
+				end
+			end
+		end
+		table.sort(searchIndex, function(a, b)
+			if a.tabIndex == b.tabIndex then
+				if a.groupTitle == b.groupTitle then
+					return a.name:lower() < b.name:lower()
+				end
+				return a.groupTitle:lower() < b.groupTitle:lower()
+			end
+			return a.tabIndex < b.tabIndex
+		end)
+	end
+
+	local function flashFeature(target)
+		if not target or not target.Parent then
+			return
+		end
+		local stroke = Instance.new("UIStroke")
+		stroke.Name = "SearchHighlight"
+		stroke.Color = COLORS.Accent
+		stroke.Thickness = 2
+		stroke.Transparency = 0
+		stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		stroke.Parent = target
+
+		local glow = Instance.new("Frame")
+		glow.Name = "SearchHighlightFill"
+		glow.BackgroundColor3 = COLORS.Accent
+		glow.BackgroundTransparency = 0.82
+		glow.BorderSizePixel = 0
+		glow.Size = UDim2.fromScale(1, 1)
+		glow.ZIndex = target.ZIndex + 2
+		glow.Parent = target
+		corner(glow, 6)
+
+		task.delay(1.1, function()
+			if stroke.Parent then stroke:Destroy() end
+			if glow.Parent then glow:Destroy() end
+		end)
+	end
+
+	local function navigateToFeature(entry)
+		if not entry then
+			return
+		end
+		setActiveTab(entry.tabIndex)
+		task.defer(function()
+			flashFeature(entry.target)
+			pushNotification(entry.breadcrumb)
+		end)
+	end
+
+	local function setSearchOpen(state)
+		if searchOpen == state then
+			return
+		end
+		searchOpen = state
+		searchResults.Visible = state
+		if not state then
+			searchResults.Size = UDim2.fromOffset(searchWrap.AbsoluteSize.X, 0)
+		end
+	end
+
+	local function rebuildSearchResults(query)
+		for _, child in ipairs(searchResultsInner:GetChildren()) do
+			if child:IsA("TextButton") then
+				child:Destroy()
+			end
+		end
+
+		query = string.lower(string.gsub(query or "", "^%s+", ""))
+		if query == "" then
+			setSearchOpen(false)
+			return
+		end
+
+		local matches = {}
+		for _, entry in ipairs(searchIndex) do
+			if entry.searchText:find(query, 1, true) then
+				table.insert(matches, entry)
+			end
+			if #matches >= 12 then
+				break
+			end
+		end
+
+		if #matches == 0 then
+			setSearchOpen(false)
+			return
+		end
+
+		local OPTION_H = 30
+		for i, entry in ipairs(matches) do
+			local opt = Instance.new("TextButton")
+			opt.Name = "SearchOpt" .. i
+			opt.AutoButtonColor = false
+			opt.Font = FONT
+			opt.Text = entry.breadcrumb
+			opt.TextColor3 = COLORS.Text
+			opt.TextSize = 11
+			opt.TextXAlignment = Enum.TextXAlignment.Left
+			opt.TextTruncate = Enum.TextTruncate.AtEnd
+			opt.BackgroundColor3 = COLORS.ControlBg
+			opt.BorderSizePixel = 0
+			opt.Size = UDim2.new(1, 0, 0, OPTION_H)
+			opt.ZIndex = 602
+			opt.LayoutOrder = i
+			opt.Parent = searchResultsInner
+			corner(opt, 6)
+
+			local pad = Instance.new("UIPadding")
+			pad.PaddingLeft = UDim.new(0, 10)
+			pad.PaddingRight = UDim.new(0, 8)
+			pad.Parent = opt
+
+			opt.MouseEnter:Connect(function()
+				opt.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+				opt.TextColor3 = COLORS.Accent
+			end)
+			opt.MouseLeave:Connect(function()
+				opt.BackgroundColor3 = COLORS.ControlBg
+				opt.TextColor3 = COLORS.Text
+			end)
+			opt.MouseButton1Click:Connect(function()
+				searchInput.Text = entry.name
+				setSearchOpen(false)
+				navigateToFeature(entry)
+			end)
+		end
+
+		local listH = math.min(#matches * OPTION_H, 180)
+		searchResultsInner.Size = UDim2.new(1, 0, 0, #matches * OPTION_H)
+		searchResults.Size = UDim2.new(1, 0, 0, listH)
+		setSearchOpen(true)
+	end
+
+	do
+		searchWrap = Instance.new("Frame")
+		searchWrap.Name = "SearchWrap"
+		searchWrap.BackgroundTransparency = 1
+		searchWrap.Size = UDim2.fromOffset(230, 24)
+		searchWrap.Position = UDim2.new(0, 108, 0.5, 0)
+		searchWrap.AnchorPoint = Vector2.new(0, 0.5)
+		searchWrap.ZIndex = 20
+		searchWrap.ClipsDescendants = false
+		searchWrap.Parent = header
+
+		local searchBox = Instance.new("Frame")
+		searchBox.Name = "SearchBox"
+		searchBox.Size = UDim2.fromScale(1, 1)
+		searchBox.BackgroundColor3 = COLORS.ControlBg
+		searchBox.BorderSizePixel = 0
+		searchBox.ZIndex = 21
+		searchBox.Parent = searchWrap
+		corner(searchBox, 6)
+
+		iconImage(searchBox, "search", {
+			Name = "SearchIcon",
+			Size = UDim2.fromOffset(12, 12),
+			Position = UDim2.new(0, 10, 0.5, 0),
+			AnchorPoint = Vector2.new(0, 0.5),
+			ZIndex = 22,
+		})
+
+		searchInput = Instance.new("TextBox")
+		searchInput.Name = "Input"
+		searchInput.Font = FONT
+		searchInput.PlaceholderText = "search..."
+		searchInput.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+		searchInput.Text = ""
+		searchInput.TextColor3 = COLORS.Text
+		searchInput.TextSize = 12
+		searchInput.TextXAlignment = Enum.TextXAlignment.Left
+		searchInput.ClearTextOnFocus = false
+		searchInput.Size = UDim2.new(1, -34, 1, 0)
+		searchInput.Position = UDim2.fromOffset(28, 0)
+		searchInput.BackgroundTransparency = 1
+		searchInput.BorderSizePixel = 0
+		searchInput.ZIndex = 22
+		searchInput.Parent = searchBox
+
+		searchResults = Instance.new("Frame")
+		searchResults.Name = "SearchResults"
+		searchResults.BackgroundColor3 = COLORS.ControlBg
+		searchResults.BorderSizePixel = 0
+		searchResults.ClipsDescendants = true
+		searchResults.Visible = false
+		searchResults.Position = UDim2.new(0, 0, 1, 4)
+		searchResults.Size = UDim2.new(1, 0, 0, 0)
+		searchResults.ZIndex = 600
+		searchResults.Parent = searchWrap
+		corner(searchResults, 6)
+		UIShadow(searchResults, { Spread = 16, Transparency = 0.5, OffsetY = 3 })
+
+		searchResultsInner = Instance.new("Frame")
+		searchResultsInner.Name = "Inner"
+		searchResultsInner.BackgroundTransparency = 1
+		searchResultsInner.Size = UDim2.new(1, 0, 0, 0)
+		searchResultsInner.ZIndex = 601
+		searchResultsInner.Parent = searchResults
+
+		local resultsLayout = Instance.new("UIListLayout")
+		resultsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		resultsLayout.Padding = UDim.new(0, 2)
+		resultsLayout.Parent = searchResultsInner
+
+		local resultsPad = Instance.new("UIPadding")
+		resultsPad.PaddingTop = UDim.new(0, 4)
+		resultsPad.PaddingBottom = UDim.new(0, 4)
+		resultsPad.PaddingLeft = UDim.new(0, 4)
+		resultsPad.PaddingRight = UDim.new(0, 4)
+		resultsPad.Parent = searchResultsInner
+
+		searchInput:GetPropertyChangedSignal("Text"):Connect(function()
+			rebuildSearchResults(searchInput.Text)
+		end)
+
+		searchInput.Focused:Connect(function()
+			if searchInput.Text ~= "" then
+				rebuildSearchResults(searchInput.Text)
+			end
+		end)
+
+		UserInputService.InputBegan:Connect(function(input, gp)
+			if gp or not searchOpen then
+				return
+			end
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+				return
+			end
+			local objs = playerGui:GetGuiObjectsAtPosition(input.Position.X, input.Position.Y)
+			for _, obj in ipairs(objs) do
+				if obj:IsDescendantOf(searchWrap) then
+					return
+				end
+			end
+			setSearchOpen(false)
+		end)
 	end
 
 	local NOTIF_W = 280
@@ -1043,16 +1376,17 @@ function TierUp.new(config)
 				or d.Name == "ThemesDropdown" or d.Name == "ThemesOptions" or d.Name == "MultiDropdown"
 				or d.Name == "ConfigDropdown" or d.Name == "ConfigOptions" or d.Name == "ConfigName"
 				or d.Name == "ConfigCreate" or d.Name == "ConfigLoad" or d.Name == "ConfigOverwrite"
+				or d.Name == "SearchBox" or d.Name == "SearchResults"
 				or d.Name == "HexField" or d.Name == "RgbField" or d.Name == "ColorActionWindow"
 				or d.Name == "copy" or d.Name == "paste"
 				or d.Name:match("^Opt") or d.Name:match("^ThemeOpt") or d.Name:match("^ConfigOpt")
-				or d.Name == "hold" or d.Name == "toggle" or d.Name == "always" then
+				or d.Name:match("^SearchOpt") or d.Name == "hold" or d.Name == "toggle" or d.Name == "always" then
 				if d:IsA("GuiObject") and d.BackgroundTransparency < 0.5 then
 					d.BackgroundColor3 = COLORS.ControlBg
 				end
 				if (d:IsA("TextButton") or d:IsA("TextLabel")) and d:GetAttribute("AccentText") then
 					d.TextColor3 = COLORS.Accent
-				elseif d:IsA("TextButton") and (d.Name:match("^Opt") or d.Name:match("^ThemeOpt") or d.Name:match("^ConfigOpt")) then
+				elseif d:IsA("TextButton") and (d.Name:match("^Opt") or d.Name:match("^ThemeOpt") or d.Name:match("^ConfigOpt") or d.Name:match("^SearchOpt")) then
 					d.TextColor3 = COLORS.Text
 				end
 			elseif d.Name == "Track" or d.Name == "TimerTrack" then
@@ -1719,7 +2053,11 @@ function TierUp.new(config)
 		LoadConfig = loadConfig,
 		OverwriteConfig = overwriteConfig,
 		ListConfigNames = listConfigNames,
-		UpdateLayout = updateMainLayout,
+		Search = {
+			Refresh = refreshSearchIndex,
+			Register = registerSearchEntry,
+			Navigate = navigateToFeature,
+		},
 	}
 
 	if config.Title then
@@ -1734,6 +2072,8 @@ function TierUp.new(config)
 	if type(config.OnLoad) == "function" then
 		config.OnLoad(L)
 	end
+
+	refreshSearchIndex()
 
 	do
 		local wm = Instance.new("Frame")
@@ -2011,6 +2351,9 @@ function TierUp.new(config)
 		if isInteractiveUnder(input.Position, tabRow) then
 			return
 		end
+		if searchWrap and isInteractiveUnder(input.Position, searchWrap) then
+			return
+		end
 
 		dragging = true
 		dragStart = input.Position
@@ -2047,103 +2390,6 @@ function TierUp.new(config)
 			dragging = false
 		end
 	end)
-
-	local RESIZE_GREY = Color3.fromRGB(130, 130, 130)
-	local RESIZE_WHITE = Color3.fromRGB(255, 255, 255)
-	local resizing = false
-	local resizeHovered = false
-	local resizeStart = nil
-	local resizeStartSize = nil
-
-	local resizeGrip = Instance.new("TextButton")
-	resizeGrip.Name = "ResizeGrip"
-	resizeGrip.AutoButtonColor = false
-	resizeGrip.Text = ""
-	resizeGrip.Size = UDim2.fromOffset(14, 14)
-	resizeGrip.Position = UDim2.new(1, -3, 1, -3)
-	resizeGrip.AnchorPoint = Vector2.new(1, 1)
-	resizeGrip.BackgroundColor3 = RESIZE_GREY
-	resizeGrip.BorderSizePixel = 0
-	resizeGrip.ZIndex = 50
-	resizeGrip.Parent = main
-	corner(resizeGrip, 3)
-
-	for i = 0, 2 do
-		local line = Instance.new("Frame")
-		line.Name = "Line" .. i
-		line.BorderSizePixel = 0
-		line.BackgroundColor3 = Color3.fromRGB(90, 90, 90)
-		line.Size = UDim2.fromOffset(2, 7)
-		line.Position = UDim2.fromOffset(3 + (i * 3), 4 + (i * 3))
-		line.Rotation = 45
-		line.ZIndex = 51
-		line.Parent = resizeGrip
-	end
-
-	local function setResizeGripHover(active)
-		resizeGrip.BackgroundColor3 = active and RESIZE_WHITE or RESIZE_GREY
-		for _, child in ipairs(resizeGrip:GetChildren()) do
-			if child:IsA("Frame") and child.Name:match("^Line") then
-				child.BackgroundColor3 = active and Color3.fromRGB(170, 170, 170) or Color3.fromRGB(90, 90, 90)
-			end
-		end
-	end
-
-	resizeGrip.MouseEnter:Connect(function()
-		resizeHovered = true
-		if not resizing then
-			setResizeGripHover(true)
-		end
-	end)
-	resizeGrip.MouseLeave:Connect(function()
-		resizeHovered = false
-		if not resizing then
-			setResizeGripHover(false)
-		end
-	end)
-
-	resizeGrip.InputBegan:Connect(function(input)
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1
-			and input.UserInputType ~= Enum.UserInputType.Touch then
-			return
-		end
-
-		resizing = true
-		resizeStart = input.Position
-		resizeStartSize = main.Size
-		setResizeGripHover(true)
-
-		if main.AnchorPoint ~= Vector2.new(0, 0) then
-			local abs = main.AbsolutePosition
-			main.AnchorPoint = Vector2.new(0, 0)
-			main.Position = UDim2.fromOffset(abs.X, abs.Y)
-		end
-	end)
-
-	UserInputService.InputChanged:Connect(function(input)
-		if not resizing then return end
-		if input.UserInputType ~= Enum.UserInputType.MouseMovement
-			and input.UserInputType ~= Enum.UserInputType.Touch then
-			return
-		end
-
-		local delta = input.Position - resizeStart
-		local newW = math.max(MIN_MAIN_W, resizeStartSize.X.Offset + delta.X)
-		local newH = math.max(MIN_MAIN_H, resizeStartSize.Y.Offset + delta.Y)
-		main.Size = UDim2.fromOffset(newW, newH)
-		updateMainLayout()
-	end)
-
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch then
-			if resizing then
-				resizing = false
-				setResizeGripHover(resizeHovered)
-			end
-		end
-	end)
-
 	applyTheme(config.Theme or "TierUp")
 	return L
 end
