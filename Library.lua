@@ -837,6 +837,30 @@ function TierUp.new(config)
 			RgbBox = rgbBox,
 		}
 	end
+
+	local function themePack(accent, main, group, header, control, tab)
+		return {
+			MainBg = main,
+			HeaderBg = header,
+			GroupBg = group,
+			GroupHeader = Color3.fromRGB(
+				math.max(0, math.floor(group.R * 255 * 0.55)),
+				math.max(0, math.floor(group.G * 255 * 0.55)),
+				math.max(0, math.floor(group.B * 255 * 0.55))
+			),
+			ControlBg = control,
+			TabBg = tab,
+			Accent = accent,
+			TrackBg = Color3.fromRGB(
+				math.min(255, math.floor(control.R * 255 + 12)),
+				math.min(255, math.floor(control.G * 255 + 12)),
+				math.min(255, math.floor(control.B * 255 + 12))
+			),
+			ToggleOff = control,
+			Text = Color3.fromRGB(255, 255, 255),
+		}
+	end
+
 	local THEMES = {
 		TierUp = themePack(
 			Color3.fromRGB(163, 188, 199),
