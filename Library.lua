@@ -307,14 +307,20 @@ function TierUp.new(config)
 	tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	tabLayout.Parent = tabRow
 
-	local pagesFolder = Instance.new("Folder")
-	pagesFolder.Name = "Pages"
-	pagesFolder.Parent = main
+	local HEADER_H = 37
+	local pageHost = Instance.new("Frame")
+	pageHost.Name = "PageHost"
+	pageHost.BackgroundTransparency = 1
+	pageHost.Size = UDim2.new(1, 0, 1, -HEADER_H)
+	pageHost.Position = UDim2.fromOffset(0, HEADER_H)
+	pageHost.ClipsDescendants = true
+	pageHost.ZIndex = 11
+	pageHost.Parent = main
 
-	local TAB_TWEEN = TweenInfo.new(0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	local TAB_SLIDE = 16
+	local TAB_TWEEN = TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+	local TAB_SLIDE = 56
 
-	local BODY_TOP = 37 + 6
+	local BODY_TOP = 6
 	local SIDE_PAD = 13
 	local GAP = 8
 	local GB_W, GB_H = 333, 450
@@ -375,8 +381,8 @@ function TierUp.new(config)
 
 	local function resetPage(page)
 		page.Visible = false
-		page.GroupTransparency = 0
 		page.Position = UDim2.fromOffset(0, 0)
+		page.ZIndex = 1
 	end
 
 	local function setActiveTab(index, instant)
@@ -403,8 +409,8 @@ function TierUp.new(config)
 			for i, page in ipairs(pages) do
 				if i == index then
 					page.Visible = true
-					page.GroupTransparency = 0
 					page.Position = UDim2.fromOffset(0, 0)
+					page.ZIndex = 2
 				else
 					resetPage(page)
 				end
@@ -422,25 +428,30 @@ function TierUp.new(config)
 			end
 		end
 
+		outPage.ZIndex = 2
+		inPage.ZIndex = 3
 		inPage.Visible = true
-		inPage.GroupTransparency = 1
 		inPage.Position = UDim2.fromOffset(dir * TAB_SLIDE, 0)
 
-		TweenService:Create(outPage, TAB_TWEEN, {
-			GroupTransparency = 1,
+		local outTween = TweenService:Create(outPage, TAB_TWEEN, {
 			Position = UDim2.fromOffset(-dir * TAB_SLIDE, 0),
-		}):Play()
-
-		TweenService:Create(inPage, TAB_TWEEN, {
-			GroupTransparency = 0,
+		})
+		local inTween = TweenService:Create(inPage, TAB_TWEEN, {
 			Position = UDim2.fromOffset(0, 0),
-		}):Play()
+		})
 
-		task.delay(TAB_TWEEN.Time, function()
+		outTween:Play()
+		inTween:Play()
+
+		inTween.Completed:Connect(function(playbackState)
+			if playbackState ~= Enum.PlaybackState.Completed then
+				return
+			end
 			if token ~= tabAnimToken then
 				return
 			end
 			resetPage(outPage)
+			inPage.ZIndex = 2
 		end)
 	end
 
@@ -466,14 +477,13 @@ function TierUp.new(config)
 		end)
 		tabButtons[i] = tab
 
-		local page = Instance.new("CanvasGroup")
+		local page = Instance.new("Frame")
 		page.Name = "Page" .. i
 		page.BackgroundTransparency = 1
 		page.Size = UDim2.fromScale(1, 1)
 		page.Visible = (i == 1)
-		page.GroupTransparency = 0
-		page.ZIndex = 12
-		page.Parent = pagesFolder
+		page.ZIndex = (i == 1) and 2 or 1
+		page.Parent = pageHost
 		pages[i] = page
 	end
 
