@@ -282,14 +282,15 @@ function TierUp.new(config)
 	headerFill.ZIndex = 11
 	headerFill.Parent = header
 
-	label(header, {
+	local titleLabel = label(header, {
 		Name = "Title",
 		Text = "TierUp",
 		TextSize = 18,
-		Size = UDim2.new(0, 95, 1, 0),
+		Size = UDim2.new(0, 0, 1, 0),
 		Position = UDim2.new(0, 16, 0, 0),
 		ZIndex = 12,
 	})
+	titleLabel.AutomaticSize = Enum.AutomaticSize.X
 
 	local tabRow = Instance.new("Frame")
 	tabRow.Name = "Tabs"
@@ -416,6 +417,14 @@ function TierUp.new(config)
 	local searchIndex = {}
 	local searchOpen = false
 	local searchWrap, searchInput, searchResults, searchResultsInner
+	local SEARCH_GAP = 8
+
+	local function updateSearchPosition()
+		if not searchWrap or not titleLabel then
+			return
+		end
+		searchWrap.Position = UDim2.new(0, 16 + titleLabel.TextBounds.X + SEARCH_GAP, 0.5, 0)
+	end
 
 	local SKIP_FEATURE_LABELS = {
 		Value = true,
@@ -576,7 +585,7 @@ function TierUp.new(config)
 		setActiveTab(entry.tabIndex)
 		task.defer(function()
 			flashFeature(entry.target)
-			pushNotification(entry.breadcrumb)
+			pushNotification(entry.name)
 		end)
 	end
 
@@ -625,9 +634,9 @@ function TierUp.new(config)
 			opt.Name = "SearchOpt" .. i
 			opt.AutoButtonColor = false
 			opt.Font = FONT
-			opt.Text = entry.breadcrumb
+			opt.Text = entry.name
 			opt.TextColor3 = COLORS.Text
-			opt.TextSize = 11
+			opt.TextSize = 13
 			opt.TextXAlignment = Enum.TextXAlignment.Left
 			opt.TextTruncate = Enum.TextTruncate.AtEnd
 			opt.BackgroundColor3 = COLORS.ControlBg
@@ -669,7 +678,7 @@ function TierUp.new(config)
 		searchWrap.Name = "SearchWrap"
 		searchWrap.BackgroundTransparency = 1
 		searchWrap.Size = UDim2.fromOffset(230, 24)
-		searchWrap.Position = UDim2.new(0, 108, 0.5, 0)
+		searchWrap.Position = UDim2.new(0, 16, 0.5, 0)
 		searchWrap.AnchorPoint = Vector2.new(0, 0.5)
 		searchWrap.ZIndex = 20
 		searchWrap.ClipsDescendants = false
@@ -766,6 +775,12 @@ function TierUp.new(config)
 			end
 			setSearchOpen(false)
 		end)
+
+		updateSearchPosition()
+		titleLabel:GetPropertyChangedSignal("Text"):Connect(function()
+			task.defer(updateSearchPosition)
+		end)
+		titleLabel:GetPropertyChangedSignal("TextBounds"):Connect(updateSearchPosition)
 	end
 
 	local NOTIF_W = 280
@@ -2061,13 +2076,9 @@ function TierUp.new(config)
 	}
 
 	if config.Title then
-		for _, c in ipairs(header:GetChildren()) do
-			if c:IsA("TextLabel") and c.Name == "Title" then
-				c.Text = config.Title
-				break
-			end
-		end
+		titleLabel.Text = config.Title
 	end
+	task.defer(updateSearchPosition)
 
 	if type(config.OnLoad) == "function" then
 		config.OnLoad(L)
